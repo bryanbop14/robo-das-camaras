@@ -219,3 +219,25 @@ test('bypassBlocks: contorna Disallow: / genérico em portais com crawlers socia
     assert.ok(r.contacts.some(c => c.email === 'camaraabatia@gmail.com'));
   } finally { s.server.close(); }
 });
+
+test('domínios abreviados (siglas RJ) e cartões multilinhas com departamentos', async () => {
+  const { heuristicDomains } = await import('../lib/crawler.js');
+  const bji = heuristicDomains('Bom Jesus do Itabapoana', 'RJ');
+  assert.ok(bji.includes('https://cmbji.rj.gov.br'), 'gera sigla cmbji.rj.gov.br para Bom Jesus do Itabapoana');
+  const dc = heuristicDomains('Duque de Caxias', 'RJ');
+  assert.ok(dc.includes('https://www.cmdc.rj.gov.br'), 'gera sigla cmdc.rj.gov.br para Duque de Caxias');
+  const cb = heuristicDomains('Cambuci', 'RJ');
+  assert.ok(cb.includes('https://camaracambuci.rj.gov.br'), 'inclui variante sem www para Cambuci');
+
+  const cmdcHtml = `
+    <div class="pane">
+      <p><strong>Presidente</strong><br>Claudio de Oliveira Thomaz<br>Telefone: (21) 2784-6935<br>Email: presidencia@cmdc.rj.gov.br</p>
+      <p><strong>Controladoria Geral</strong><br>Amaury Lopes de Almeida Nogueira<br>Telefone: (21) 2784-6951<br>Email: controladoria@cmdc.rj.gov.br</p>
+      <p><strong>Gabinete do Vereador Ailton Abreu Nascimento (Chiquinho Caipira)</strong><br>Telefone: (21) 2784-6961<br>E-mail: chiquinhocaipira@cmdc.rj.gov.br</p>
+    </div>`;
+  const contacts = extractContacts(cmdcHtml, 'https://www.cmdc.rj.gov.br/?page_id=6');
+  const byEmail = e => contacts.find(c => c.email === e);
+  assert.equal(byEmail('presidencia@cmdc.rj.gov.br').name, 'Claudio de Oliveira Thomaz');
+  assert.equal(byEmail('controladoria@cmdc.rj.gov.br').name, 'Amaury Lopes de Almeida Nogueira');
+  assert.equal(byEmail('chiquinhocaipira@cmdc.rj.gov.br').name, 'Ailton Abreu Nascimento');
+});
