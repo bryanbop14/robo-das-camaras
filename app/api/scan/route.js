@@ -1,3 +1,4 @@
+import {officialFallback} from '../../../lib/official-sources';
 import * as cheerio from 'cheerio';
 import {NextResponse} from 'next/server';
 export const runtime='nodejs';
@@ -174,6 +175,9 @@ export async function POST(request){
   if(!/^[A-Z]{2}$/.test(uf)||city.length<2||city.length>90)return NextResponse.json({error:'Estado ou município inválido'},{status:400});
   const started=Date.now(),deadline=started+(fast?18000:TIME_BUDGET);
   const attempts=[],allRecords=[],visited=new Set(),allowedHosts=[];
+  const fallback=await officialFallback(city,uf);
+  attempts.push(...fallback.attempts);
+  allRecords.push(...fallback.contacts);
   const candidates=uniq([...candidateDomains(city,uf),...await discoverBySearch(city,uf)]);
   let origin='',homeHtml='',pageCount=0;
   // Check candidates with bounded parallelism. The discovered domain must match the municipality and an official host format.
@@ -187,11 +191,11 @@ export async function POST(request){
    }));
    for(const r of results){
     attempts.push({url:r.url,status:r.status,reason:r.reason||''});
-    if(!origin&&r.html&&/c[aâ]mara|legislativo|legislativa/i.test(cheerio.load(r.html)('title,body').text().slice(0,2500))){origin=new URL(r.url).origin;homeHtml=r.html;}
+    if(!origin&&r.html){const $=cheerio.load(r.html);const title=$('title,h1').text().slice(0,500);const body=$('body').text().slice(0,4500);const match=/c[aâ]mara municipal|poder legislativo|vereadores|portal da c[aâ]mara|processo legislativo/i.test(title+' '+body);if(match){origin=new URL(r.url).origin;homeHtml=r.html;}else{attempts[attempts.length-1].reason='HTTP 200, conteúdo não identificado como Câmara';}}
    }
    if(origin)break;
   }
-  if(!origin)return NextResponse.json({city,uf,attempts,pagesVisited:0,contacts:[],warnings:['Nenhum domínio oficial validado. Habilite SERPER_API_KEY ou cadastre a URL oficial.'],elapsedMs:Date.now()-started,complete:false});
+  if(!origin)return NextResponse.json({city,uf,attempts,pagesVisited:0,contacts:mergeContacts(allRecords),warnings:['Nenhum portal da Câmara validado nesta tentativa. Fontes oficiais alternativas foram consultadas.'],elapsedMs:Date.now()-started,complete:false});
   const rootHost=new URL(origin).hostname;
   const saplHost='sapl.'+rootHost.replace(/^www\./,'');
   const queue=[{url:origin+'/',depth:0}];
