@@ -40,7 +40,20 @@ O DF não tem municípios e possui a Câmara Legislativa do Distrito Federal, qu
 - Itapoá (sistemas): https://www.camaraitapoa.sc.gov.br/perguntas-frequentes/893-o-site-e-o-portal-de-transparencia-contem-ferramenta-de-pesquisa-de-conteudo-que-permita-o-acesso-a-informacao.html
 - RFC 9309: https://www.rfc-editor.org/rfc/rfc9309.html
 
-## Defeitos atuais confirmados na implementação
+## Situação dos defeitos (v0.5, 28/10/2026)
+
+| # | Defeito | Situação |
+|---|---|---|
+| 1 | Domínios fora do padrão | Resolvido em grande parte: URLs vêm do cadastro Interlegis; heurísticas ampliadas; busca opcional com validação de identidade |
+| 2 | `acceptedHost` bloqueava outros domínios oficiais | Resolvido: escopo pelo domínio validado + SAPL; redirecionamentos seguidos com revalidação |
+| 3 | robots 4xx tratado como bloqueio | Resolvido (RFC 9309), com distinção entre "robots" e "robots_indisponivel" |
+| 4 | Links avaliados só pela URL | Resolvido: texto do âncora e `title` entram na pontuação |
+| 5 | Orçamento serverless | Mitigado: fila priorizada, 6 páginas em paralelo, DNS em cache, parada antecipada no modo rápido; `complete` só considera páginas relevantes pendentes |
+| 6 | Sem persistência/fila | Aberto (progresso só no navegador) |
+| 7 | SAPL não validado | Melhorado: paginação DRF, inativos filtrados, Mesa Diretora; validar contra SAPLs reais |
+| 8 | PDFs, fontes externas por UF | Aberto (só GCAU/PR) |
+
+## Defeitos confirmados na versão anterior (histórico)
 
 1. `candidateDomains` reconhece apenas algumas construções de domínio. `cmm.am.gov.br`, `cmb.pa.gov.br` e outros padrões não são previstos.
 2. `acceptedHost` bloqueia a exploração de outros domínios oficiais da mesma instituição que não correspondam ao padrão adivinhado.
