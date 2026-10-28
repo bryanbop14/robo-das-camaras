@@ -1,8 +1,14 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ContactTable from './ContactTable';
+import AssistedCapture, { mergeManual } from './AssistedCapture';
 import { SECTOR_LABEL } from '../../lib/text.js';
 import { CONTACT_HEADER, contactRow, download, hintFor, runScan, STATUS_LABEL, STATUS_TONE, toCsv } from '../lib/client.js';
+
+export function uniqUrls(r) {
+  const list = [r.officialSite, ...(r.blockedUrls || [])].filter(Boolean).map(u => { try { return new URL(u).origin; } catch { return ''; } }).filter(Boolean);
+  return [...new Set(list)];
+}
 
 export default function CityScan({ uf, cities, citiesLoading, registry }) {
   const [city, setCity] = useState('');
@@ -67,6 +73,12 @@ export default function CityScan({ uf, cities, citiesLoading, registry }) {
         {result.platform && <span>Plataforma: {result.platform}</span>}
       </div>
       {result.warnings?.map((w, i) => <p key={i} className="warn">{w}</p>)}
+      {['bloqueado', 'inacessivel', 'sem_site', 'parcial', 'fonte_alternativa'].includes(result.status) && <AssistedCapture
+        key={result.city + result.elapsedMs}
+        urls={uniqUrls(result)}
+        robotsText={result.robotsText}
+        officialHost={hint?.site ? new URL(hint.site).hostname : ''}
+        onAdd={added => setResult(r => ({ ...r, contacts: mergeManual(r.contacts, added) }))} />}
       <div className="row spaced"><h2>Contatos institucionais</h2><button onClick={csv} disabled={!result.contacts.length}>Exportar CSV</button></div>
       <ContactTable contacts={result.contacts} />
       <details className="audit"><summary>Auditoria da coleta ({result.attempts.length} registros)</summary>

@@ -34,3 +34,8 @@ details.audit{margin-top:22px}details.audit summary{cursor:pointer;color:#9fc4d6
 @media(max-width:1000px){.metrics.six{grid-template-columns:repeat(3,minmax(0,1fr))}.filters{grid-template-columns:1fr 1fr}}
 @media(max-width:760px){.metrics.six{grid-template-columns:repeat(2,minmax(0,1fr))}.filters{grid-template-columns:1fr}.spaced{flex-direction:column}}
 td.nowrap{white-space:nowrap}
+.assisted{margin:22px 0;padding:18px;border:1px dashed #4b6a82;border-radius:12px;background:#0b1a29}.assisted h3{margin:0 0 6px;font-size:16px}
+.wraplinks{gap:8px;margin:10px 0}.linkbtn{padding:6px 12px;border:1px solid #375267;border-radius:20px;font-size:13px;text-decoration:none}
+textarea{width:100%;background:#0b1a29;color:#e7f8ff;border:1px solid #395167;padding:12px;border-radius:8px;font:14px/1.5 Arial,sans-serif;resize:vertical}
+pre.robots{white-space:pre-wrap;font-size:12px;color:#c8dce5;background:#091421;padding:12px;border-radius:8px;max-height:220px;overflow:auto}
+.grid.two{grid-template-columns:1fr;margin-top:10px}

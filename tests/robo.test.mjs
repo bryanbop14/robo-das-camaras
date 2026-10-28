@@ -108,3 +108,52 @@ test('sem site: status coerente e contatos do cadastro', async () => {
   assert.equal(r.status, 'fonte_alternativa');
   assert.equal(r.contacts.length, 1);
 });
+
+test('robots.txt: BOM, diagnóstico da regra e permissão', async () => {
+  const { robotsCheck } = await import('../lib/net.js');
+  const s = await serve({ '/robots.txt': '﻿User-agent: *\nDisallow: /privado\n\nUser-agent: Googlebot\nDisallow: /*?\n', '/': 'ok' });
+  const blockAll = await serve({ '/robots.txt': 'User-agent: *\r\nDisallow: /\r\nUser-agent: Googlebot\r\nAllow: /\r\n' });
+  try {
+    assert.equal((await robotsCheck(s.origin + '/privado/x')).allowed, false, 'com BOM a regra ainda vale');
+    assert.equal((await robotsCheck(s.origin + '/vereadores?x=1')).allowed, true, 'regra do Googlebot não se aplica a nós');
+    const r = await robotsCheck(blockAll.origin + '/');
+    assert.equal(r.reason, 'robots');
+    assert.match(r.detail, /Disallow: \/" para User-agent: \*/);
+    assert.match(r.robotsText, /Googlebot/);
+  } finally { s.server.close(); blockAll.server.close(); }
+});
+
+test('coleta assistida: texto colado sem HTML', async () => {
+  const { extractFromText, mergeContacts } = await import('../lib/extract.js');
+  const text = `Mesa Diretora
+Presidente
+JOSÉ CARLOS DE OLIVEIRA
+presidencia@abatia.pr.leg.br
+(43) 3556-1487
+Vereadora
+Ana Lúcia Prado
+ana.prado@abatia.pr.leg.br
+Setor de Compras
+licitacao@abatia.pr.leg.br - (43) 3556-2363`;
+  const c = mergeContacts(extractFromText(text, 'https://www.abatia.pr.leg.br/vereadores').map(x => ({ ...x, type: 'manual' })), ['www.abatia.pr.leg.br']);
+  const by = e => c.find(x => x.email === e);
+  assert.equal(by('presidencia@abatia.pr.leg.br').name, 'José Carlos de Oliveira');
+  assert.equal(by('presidencia@abatia.pr.leg.br').sector, 'decisor');
+  assert.equal(by('presidencia@abatia.pr.leg.br').phone, '(43) 3556-1487');
+  assert.equal(by('ana.prado@abatia.pr.leg.br').name, 'Ana Lúcia Prado');
+  assert.equal(by('ana.prado@abatia.pr.leg.br').phone, '', 'não herda telefone do contato anterior');
+  assert.equal(by('licitacao@abatia.pr.leg.br').sector, 'compras');
+  assert.equal(by('licitacao@abatia.pr.leg.br').phone, '(43) 3556-2363');
+  assert.equal(by('ana.prado@abatia.pr.leg.br').emailKind, 'oficial');
+});
+
+test('site bloqueado por robots: status bloqueado com a regra no diagnóstico', async () => {
+  const s = await serve({ '/robots.txt': 'User-agent: *\nDisallow: /\n', '/': '<html><body>Câmara Municipal de Bloqueada</body></html>' });
+  try {
+    const r = await scanCamara('Bloqueada', 'PR', { fast: true, hint: { site: s.origin + '/', email: 'cm@gmail.com' } });
+    assert.equal(r.status, 'bloqueado');
+    assert.ok(r.attempts.some(a => /Disallow: \//.test(a.reason)));
+    assert.match(r.robotsText, /Disallow/);
+    assert.equal(r.blockedUrls.length, 1);
+  } finally { s.server.close(); }
+});

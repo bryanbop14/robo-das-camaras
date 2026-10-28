@@ -21,6 +21,12 @@ Descoberta auditável de contatos institucionais públicos das câmaras municipa
 
 **7. Varredura do estado.** 1 a 4 municípios em paralelo, nova tentativa automática em erro, previsão de término, progresso salvo no navegador, **reprocessar pendentes**, filtro por situação e detalhes por município. Situações: concluído, parcial, bloqueado pelo site, site inacessível, só cadastro oficial, sem site localizado, erro.
 
+**8. Quando o site recusa robôs.** O robô não contorna `robots.txt` nem bloqueios HTTP (não troca de identidade, de IP nem finge ser navegador). Em vez disso:
+- mostra **a regra exata** que bloqueou (ex.: `Disallow: /` para `User-agent: *`) e o robots.txt do site, para separar bloqueio real de erro de leitura;
+- trata robots.txt lento como lentidão: tenta de novo com mais tempo antes de suspender, e reavalia em 5 minutos;
+- consulta **trechos indexados por buscador** (Serper, requer `SERPER_API_KEY`), aceitando só e-mails do domínio oficial ou trechos que citem a Câmara do município;
+- oferece **coleta assistida**: atalhos para abrir as páginas no navegador da pessoa, que cola o conteúdo; o robô extrai e classifica sem acessar o site. Esses contatos sobrevivem a "Reprocessar pendentes".
+
 **Exportações:** contatos (com setor, prioridade e confiança), câmaras (uma linha por município, com CNPJ, site, SAPL, plataforma e melhor contato), auditoria (cada tentativa e seu resultado) e cadastro oficial. Os CSVs usam `;` e BOM para abrir direto no Excel e neutralizam fórmulas.
 
 ## Executar

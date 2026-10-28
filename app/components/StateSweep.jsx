@@ -1,6 +1,8 @@
 'use client';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import ContactTable from './ContactTable';
+import AssistedCapture, { mergeManual } from './AssistedCapture';
+import { uniqUrls } from './CityScan';
 import { SECTOR_LABEL } from '../../lib/text.js';
 import { CONTACT_HEADER, contactRow, download, formatDuration, hintFor, RETRY_STATUSES, runScan, STATUS_LABEL, STATUS_TONE, toCsv } from '../lib/client.js';
 
@@ -18,6 +20,7 @@ function report(city, data) {
     registry: data.registry || null, pagesVisited: data.pagesVisited || 0,
     warning: (data.warnings || []).join(' '), elapsedMs: data.elapsedMs || 0,
     attempts: (data.attempts || []).slice(0, 12), finishedAt: new Date().toISOString(),
+    robotsText: (data.robotsText || '').slice(0, 800), blockedUrls: (data.blockedUrls || []).slice(0, 4),
   };
 }
 const best = r => r.contacts.find(c => c.priority >= 4 && (c.name || c.email)) || r.contacts[0] || null;
@@ -71,7 +74,7 @@ export default function StateSweep({ uf, cities, citiesLoading, registry }) {
     if (citiesLoading || !cities.length) return;
     const base = state.current || { version: STORE_VERSION, uf, cities: cities.map(c => ({ id: c.id, nome: c.nome })), results: {}, startedAt: new Date().toISOString() };
     if (retryPending) {
-      const kept = Object.fromEntries(Object.entries(base.results).filter(([, r]) => !RETRY_STATUSES.has(r.status)));
+      const kept = Object.fromEntries(Object.entries(base.results).filter(([, r]) => !RETRY_STATUSES.has(r.status) || r.manual));
       commit({ ...base, results: kept });
     } else commit(base);
     setNotice(''); setPhase('running');
@@ -100,6 +103,11 @@ export default function StateSweep({ uf, cities, citiesLoading, registry }) {
     if (id === run.current) { setPhase('finished'); setNotice('Varredura finalizada. Os municípios em "Exigem revisão" podem ser reprocessados.'); }
   }
 
+  function addManual(id, added) {
+    const cur = state.current.results[id];
+    const contacts = mergeManual(cur.contacts, added.map(c => ({ ...c, city: cur.city })));
+    commit({ ...state.current, results: { ...state.current.results, [id]: { ...cur, contacts, manual: true } } });
+  }
   function exportContacts() {
     const rows = [CONTACT_HEADER];
     for (const r of results) for (const c of r.contacts) rows.push(contactRow(uf, r.city, c, SECTOR_LABEL));
@@ -182,6 +190,8 @@ export default function StateSweep({ uf, cities, citiesLoading, registry }) {
               {(r.warning || r.error) && <p className="warn">{r.error || r.warning}</p>}
               {r.platform && <p className="muted small">Plataforma: {r.platform} · {r.pagesVisited} páginas em {(r.elapsedMs / 1000).toFixed(1)} s</p>}
               <ContactTable contacts={r.contacts} />
+              {RETRY_STATUSES.has(r.status) && <AssistedCapture urls={uniqUrls(r)} robotsText={r.robotsText}
+                onAdd={added => addManual(r.id, added)} />}
             </td></tr>}
           </Fragment>; })}</tbody>
         </table></div>
