@@ -12,7 +12,7 @@ export const STATUS_LABEL = {
   erro: 'Erro',
 };
 export const STATUS_TONE = { concluido: 'ok', parcial: 'warn', fonte_alternativa: 'warn', bloqueado: 'bad', inacessivel: 'bad', sem_site: 'bad', erro: 'bad' };
-export const RETRY_STATUSES = new Set(['parcial', 'bloqueado', 'inacessivel', 'sem_site', 'erro']);
+export const RETRY_STATUSES = new Set(['parcial', 'fonte_alternativa', 'bloqueado', 'inacessivel', 'sem_site', 'erro']);
 export const PRIORITY_SECTORS = new Set(['decisor', 'compras', 'ti', 'comunicacao']);
 
 function readJson(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; } }

@@ -6,7 +6,7 @@ import { uniqUrls } from './CityScan';
 import { SECTOR_LABEL } from '../../lib/text.js';
 import { CONTACT_HEADER, contactRow, download, formatDuration, hintFor, RETRY_STATUSES, runScan, STATUS_LABEL, STATUS_TONE, toCsv } from '../lib/client.js';
 
-const STORE_VERSION = 3;
+const STORE_VERSION = 4;
 const key = uf => 'riole-camaras-sweep-v' + STORE_VERSION + '-' + uf;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 function load(uf) { try { const d = JSON.parse(localStorage.getItem(key(uf)) || 'null'); return d?.version === STORE_VERSION ? d : null; } catch { return null; } }

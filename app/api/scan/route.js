@@ -4,6 +4,7 @@ import { UF_SET } from '../../../lib/text.js';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
+export const preferredRegion = ['gru1', 'iad1'];
 
 /**
  * POST /api/scan  { uf, city, fast?, hint? }
