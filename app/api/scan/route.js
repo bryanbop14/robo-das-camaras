@@ -11,6 +11,10 @@ const RE_RELEVANT=/vereador|parlamentar|servidor|equipe|quem.e.quem|estrutura|or
 const RE_PRIORITY=/\/parlamentar\/|vereadores|servidores|quem.e.quem|contato|sapl\./i;
 const PATHS=['/','/processo-legislativo/vereadores','/vereadores','/parlamentares','/servidores','/quem-e-quem','/contatos','/contato','/estrutura-organizacional','/institucional','/recursos-humanos','/sitemap'];
 const KNOWN={
+ 'PR:Abatiá':['https://www.abatia.pr.leg.br','https://abatia.pr.leg.br'],
+ 'PR:Almirante Tamandaré':['https://www.almirantetamandare.pr.leg.br'],
+ 'AM:Manaus':['https://www.cmm.am.gov.br'],
+ 'PA:Belém':['https://cmb.pa.gov.br'],
  'PR:Coronel Vivida':['https://www.camaracoronelvivida.pr.gov.br'],
  'PR:Cruzeiro do Oeste':['https://www.cmcruzeirodooeste.pr.gov.br'],
  'PR:Douradina':['https://www.douradina.pr.leg.br']
@@ -31,7 +35,7 @@ function candidateDomains(city,uf){
 function acceptedHost(host,city,uf,additional=[]){
  host=host.toLowerCase();
  const s=slug(city),u=uf.toLowerCase();
- const allowed=[s+'.'+u+'.leg.br','camara'+s+'.'+u+'.gov.br','camarade'+s+'.'+u+'.gov.br','cm'+s+'.'+u+'.gov.br',s+'.'+u+'.gov.br',...additional];
+ const allowed=[...(KNOWN[uf+':'+city]||[]).map(v=>new URL(v).hostname),'cmm.'+u+'.gov.br','cmb.'+u+'.gov.br',s+'.'+u+'.leg.br','camara'+s+'.'+u+'.gov.br','camarade'+s+'.'+u+'.gov.br','cm'+s+'.'+u+'.gov.br',s+'.'+u+'.gov.br',...additional];
  return allowed.some(d=>host===d||host.endsWith('.'+d));
 }
 function safeUrl(ref,base,city,uf,additional=[]){
