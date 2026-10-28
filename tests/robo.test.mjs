@@ -157,3 +157,65 @@ test('site bloqueado por robots: status bloqueado com a regra no diagnóstico', 
     assert.equal(r.blockedUrls.length, 1);
   } finally { s.server.close(); }
 });
+
+test('Softcam, Quadro Funcional, WhatsApp e múltiplos servidores com e-mail institucional único', async () => {
+  const { mergeContacts } = await import('../lib/extract.js');
+  const { extractPdfText } = await import('../lib/net.js');
+  const zlib = await import('node:zlib');
+
+  const submenuHtml = `
+    <ul class="item-submenu">
+      <li class="list-submenu-item"><a href="/camara/membros/show/58"><h4 class="list-title-avatar">Presidente</h4><p class="list-description">José Carlos de Oliveira (MDB)</p></a></li>
+      <li class="list-submenu-item"><a href="/camara/membros/show/67"><h4 class="list-title-avatar">1º Secretário</h4><p class="list-description">Fernando Augusto Carvalho (PSD)</p></a></li>
+      <li class="list-submenu-item"><a href="/camara/membros/show/65"><p class="list-description">Emerson Lourenço (PSD)</p></a></li>
+    </ul>
+    <footer>camaraabatia@gmail.com | Fone/Fax: (043) 3556 - 1487 3556.2363
+      <a href="https://api.whatsapp.com/send?phone=5543998249129">WhatsApp</a>
+    </footer>`;
+
+  const extractedSub = extractContacts(submenuHtml, 'https://www.abatia.pr.leg.br/ajax/header_menu/Vereadores');
+  const pdfStreamContent = 'BT\n1 0 0 1 50 700 Tm\n(QUADRO FUNCIONAL DO PODER LEGISLATIVO) Tj\n1 0 0 1 50 680 Tm\n(Maria Ines de Carvalho - Contador - Efetivo) Tj\n1 0 0 1 50 660 Tm\n(Reinaldo Junior - Advogado - Efetivo) Tj\nET';
+  const compressed = zlib.deflateSync(Buffer.from(pdfStreamContent, 'latin1'));
+  const fakePdf = Buffer.concat([
+    Buffer.from('%PDF-1.4\n1 0 obj\n<< /Filter /FlateDecode /Length ' + compressed.length + ' >>\nstream\n', 'latin1'),
+    compressed,
+    Buffer.from('\nendstream\nendobj\n%%EOF', 'latin1'),
+  ]);
+  const pdfHtml = extractPdfText(fakePdf);
+  assert.match(pdfHtml, /Maria Ines de Carvalho/);
+  const extractedPdf = extractContacts(pdfHtml, 'https://www.cloudsoftcam.com.br/quadro-funcional.pdf', {
+    fallbackEmail: 'camaraabatia@gmail.com',
+    fallbackPhone: '(43) 3556-1487',
+  });
+
+  const merged = mergeContacts([...extractedSub, ...extractedPdf], ['www.abatia.pr.leg.br']);
+  const byName = n => merged.find(c => c.name === n);
+  assert.ok(byName('José Carlos de Oliveira'), 'extrai Presidente do submenu Softcam');
+  assert.equal(byName('José Carlos de Oliveira').role, 'Presidente (Mesa Diretora)');
+  assert.equal(byName('José Carlos de Oliveira').email, 'camaraabatia@gmail.com');
+  assert.ok(byName('Fernando Augusto Carvalho'), 'preserva segundo membro mesmo compartilhando e-mail geral');
+  assert.ok(byName('Emerson Lourenço'), 'extrai vereador em exercício');
+  assert.ok(byName('Maria Ines de Carvalho'), 'extrai contadora do PDF de Quadro Funcional');
+  assert.equal(byName('Maria Ines de Carvalho').role, 'Contador');
+  assert.equal(byName('Maria Ines de Carvalho').sector, 'financeiro');
+  assert.ok(byName('Reinaldo Junior'), 'extrai advogado do PDF de Quadro Funcional');
+  assert.equal(byName('Reinaldo Junior').role, 'Advogado');
+  assert.ok(merged.some(c => c.phone && (c.phone.includes('(43) 99824-9129') || c.phone.includes('(43) 3556-1487'))), 'extrai WhatsApp e telefone fixo');
+});
+
+test('bypassBlocks: contorna Disallow: / genérico em portais com crawlers sociais liberados, mantendo proteção a caminhos privados', async () => {
+  const { robotsCheck } = await import('../lib/net.js');
+  const s = await serve({
+    '/robots.txt': 'User-agent: facebookexternalhit\nDisallow:\nUser-agent: *\nDisallow: /\n',
+    '/': '<html><head><title>Câmara Municipal de Abatiá</title></head><body><h1>Câmara Municipal de Abatiá - Poder Legislativo Municipal</h1><p>Portal oficial de transparência, vereadores, sessões plenárias e atendimento ao cidadão: camaraabatia@gmail.com | Telefone: (43) 3556-1487</p></body></html>',
+  });
+  try {
+    const allowedRoot = await robotsCheck(s.origin + '/', Date.now() + 5000, { bypassBlocks: true });
+    assert.equal(allowedRoot.allowed, true, 'permite raiz pública via crawler social autorizado');
+    const blockedAdmin = await robotsCheck(s.origin + '/admin/painel', Date.now() + 5000, { bypassBlocks: true });
+    assert.equal(blockedAdmin.allowed, false, 'continua bloqueando caminhos sensíveis (/admin)');
+    const r = await scanCamara('Abatiá', 'PR', { fast: true, bypassBlocks: true, hint: { site: s.origin + '/' } });
+    assert.equal(r.status, 'concluido');
+    assert.ok(r.contacts.some(c => c.email === 'camaraabatia@gmail.com'));
+  } finally { s.server.close(); }
+});

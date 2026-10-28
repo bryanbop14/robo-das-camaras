@@ -16,7 +16,7 @@ export default function Home() {
     <header>
       <div><div className="brand">RIOLE · INTELIGÊNCIA COMERCIAL</div><h1>Robô das Câmaras</h1>
         <p>Descoberta auditável de contatos institucionais das câmaras municipais brasileiras.</p></div>
-      <span className="pill">v0.5 · 27 UFs</span>
+      <span className="pill">v0.6 · 27 UFs</span>
     </header>
 
     <section className="panel">
@@ -39,8 +39,8 @@ export default function Home() {
 
     <section className="panel">
       <h2>Como funciona</h2>
-      <p>1. O cadastro do Interlegis (Senado) indica CNPJ, contato institucional e os endereços oficiais (.leg.br, Portal Modelo e SAPL) de cada Câmara. 2. O robô valida o site, lê a API do SAPL (vereadores e Mesa Diretora) e navega por páginas de vereadores, contatos, estrutura e telefones, respeitando o robots.txt. 3. Cada contato recebe setor, prioridade comercial e uma nota de confiança. Contatos não são inferidos: tudo tem URL de origem.</p>
-      <p className="muted small">Limites: até 60 páginas por município na pesquisa individual e 14 na varredura estadual; PDFs e páginas montadas por JavaScript não são lidas; sites que bloqueiam robôs ficam marcados para revisão.</p>
+      <p>1. O cadastro do Interlegis (Senado) indica CNPJ, contato institucional e os endereços oficiais (.leg.br, Portal Modelo e SAPL) de cada Câmara. 2. O robô valida o site, lê a API do SAPL (vereadores e Mesa Diretora), menus dinâmicos (como Softcam) e PDFs institucionais de Quadro Funcional, além de navegar por páginas de vereadores, contatos, estrutura, ouvidoria e links de WhatsApp, contornando bloqueios genéricos de firewall/WAF em portais públicos. 3. Cada contato recebe setor, prioridade comercial e uma nota de confiança. Contatos não são inferidos: tudo tem URL de origem.</p>
+      <p className="muted small">Limites: até 60 páginas por município na pesquisa individual e 14 na varredura estadual; inclui extração nativa de PDFs de Quadro Funcional e fallback via Reader Proxy quando o servidor aplica desafios anti-bot.</p>
     </section>
   </main>;
 }
