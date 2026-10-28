@@ -199,7 +199,7 @@ export async function POST(request){
   queue.push({url:'https://'+saplHost+'/parlamentar/',depth:1});
   const siblingSapl='https://'+rootHost.replace(/^www\./,'').replace(/^camara/,'sapl');
   // The SAPL is a separate official subdomain; it is in scope only with municipal host validation.
-  const api=fast?{records:[],links:[],attempt:null}:await saplApi(saplHost,city,uf,deadline);
+  const api=await saplApi(saplHost,city,uf,deadline);
   if(api.attempt)attempts.push(api.attempt);
   allRecords.push(...api.records);
   for(const url of api.links)queue.unshift({url,depth:1});
