@@ -20,6 +20,7 @@ const uniq=a=>[...new Set(a.filter(Boolean))];
 function candidateDomains(city,uf){
  const s=slug(city), u=uf.toLowerCase();
  return uniq([...(KNOWN[uf+':'+city]||[]),
+ 'https://'+s+'.'+u+'.leg.br',
  'https://www.'+s+'.'+u+'.leg.br',
  'https://www.camara'+s+'.'+u+'.gov.br',
  'https://www.cm'+s+'.'+u+'.gov.br',
@@ -61,7 +62,7 @@ async function robotsAllowed(url){
  const u=new URL(url),root=u.origin;
  if(!robotsCache.has(root)){
   const result=await fetchUrl(root+'/robots.txt','text/plain');
-  if(result.status===403||result.status===401){robotsCache.set(root,{deny:true,groups:[]});}
+  if(result.status===429||String(result.status).startsWith('5')||['timeout','error'].includes(result.status)){robotsCache.set(root,{deny:true,groups:[]});}
   else{
    const groups=[];let agents=[],rules=[];
    for(const raw of (result.html||'').split(/\r?\n/)){
@@ -144,7 +145,7 @@ function mergeContacts(items){
  for(const c of items){
   if(!c.email&&!c.phone)continue;
   if(c.name&&c.name.length>110)continue;
-  const key=(c.name?'name:'+slug(c.name):'email:'+c.email.toLowerCase());
+  const key=c.email?'email:'+c.email.toLowerCase():(c.name?'name:'+slug(c.name):'phone:'+c.phone);
   const curr=map.get(key);
   const score=x=>(x.name?4:0)+(x.email?2:0)+(x.phone?2:0)+(x.type==='perfil'?3:0);
   if(!curr||score(c)>score(curr))map.set(key,c);
@@ -164,15 +165,15 @@ async function discoverBySearch(city,uf){
 }
 export async function POST(request){
  try{
-  const {city:rawCity,uf:rawUf}=await request.json();
+  const {city:rawCity,uf:rawUf,fast=false}=await request.json();
   const city=String(rawCity||'').trim(),uf=String(rawUf||'').toUpperCase();
   if(!/^[A-Z]{2}$/.test(uf)||city.length<2||city.length>90)return NextResponse.json({error:'Estado ou município inválido'},{status:400});
-  const started=Date.now(),deadline=started+TIME_BUDGET;
+  const started=Date.now(),deadline=started+(fast?18000:TIME_BUDGET);
   const attempts=[],allRecords=[],visited=new Set(),allowedHosts=[];
   const candidates=uniq([...candidateDomains(city,uf),...await discoverBySearch(city,uf)]);
   let origin='',homeHtml='',pageCount=0;
   // Check candidates with bounded parallelism. The discovered domain must match the municipality and an official host format.
-  for(let i=0;i<candidates.length&&Date.now()<deadline-14000;i+=3){
+  for(let i=0;i<candidates.length&&Date.now()<deadline-(fast?3500:14000);i+=3){
    const batch=candidates.slice(i,i+3).filter(u=>{try{return acceptedHost(new URL(u).hostname,city,uf)}catch{return false}});
    const results=await Promise.all(batch.map(async url=>{
     if(!await robotsAllowed(url+'/'))return {url,status:'robots'};
@@ -194,12 +195,12 @@ export async function POST(request){
   queue.push({url:'https://'+saplHost+'/parlamentar/',depth:1});
   const siblingSapl='https://'+rootHost.replace(/^www\./,'').replace(/^camara/,'sapl');
   // The SAPL is a separate official subdomain; it is in scope only with municipal host validation.
-  const api=await saplApi(saplHost,city,uf,deadline);
+  const api=fast?{records:[],links:[],attempt:null}:await saplApi(saplHost,city,uf,deadline);
   if(api.attempt)attempts.push(api.attempt);
   allRecords.push(...api.records);
   for(const url of api.links)queue.unshift({url,depth:1});
   let truncated=false;
-  while(queue.length&&pageCount<MAX_PAGES&&Date.now()<deadline-2500){
+  while(queue.length&&pageCount<(fast?12:MAX_PAGES)&&Date.now()<deadline-2500){
    const work=[];
    while(queue.length&&work.length<3){
     const entry=queue.shift();
