@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import ContactTable from './ContactTable';
 import AssistedCapture, { mergeManual } from './AssistedCapture';
 import { SECTOR_LABEL } from '../../lib/text.js';
-import { CONTACT_HEADER, contactRow, download, hintFor, runScan, STATUS_LABEL, STATUS_TONE, toCsv } from '../lib/client.js';
+import { CONTACT_HEADER, contactRow, download, formatAddress, hintFor, runScan, STATUS_LABEL, STATUS_TONE, toCsv } from '../lib/client.js';
 
 export function uniqUrls(r) {
   const list = [r.officialSite, ...(r.blockedUrls || [])].filter(Boolean).map(u => { try { return new URL(u).origin; } catch { return ''; } }).filter(Boolean);
@@ -29,7 +29,7 @@ export default function CityScan({ uf, cities, citiesLoading, registry }) {
     finally { setRunning(false); }
   }
   function csv() {
-    const rows = [CONTACT_HEADER, ...result.contacts.map(c => contactRow(uf, city, c, SECTOR_LABEL))];
+    const rows = [CONTACT_HEADER, ...result.contacts.map(c => contactRow(uf, city, c, SECTOR_LABEL, result.address))];
     download(toCsv(rows), 'contatos-' + city.toLowerCase().normalize('NFD').replace(/[^\w]+/g, '-') + '-' + uf.toLowerCase() + '.csv');
   }
   const priority = result?.contacts.filter(c => c.priority >= 4).length || 0;
@@ -72,6 +72,7 @@ export default function CityScan({ uf, cities, citiesLoading, registry }) {
         {result.saplUrl && <span>SAPL: <a href={result.saplUrl} target="_blank" rel="noreferrer">{result.saplUrl}</a></span>}
         {result.platform && <span>Plataforma: {result.platform}</span>}
       </div>
+      {result.address && <p className="small">📍 <strong>Endereço:</strong> {formatAddress(result.address)} <span className="muted">· fonte: {result.address.source && /^https?:/.test(result.address.source) ? <a href={result.address.source} target="_blank" rel="noreferrer">{result.address.origin}</a> : result.address.origin}</span></p>}
       {result.warnings?.map((w, i) => <p key={i} className="warn">{w}</p>)}
       {['bloqueado', 'inacessivel', 'sem_site', 'parcial', 'fonte_alternativa'].includes(result.status) && <AssistedCapture
         key={result.city + result.elapsedMs}

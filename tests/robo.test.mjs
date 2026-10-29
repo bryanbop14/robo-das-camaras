@@ -309,3 +309,20 @@ test('robô de atos oficiais: nomeações vigentes, função designada e exonera
   assert.ok(links.docs.some(d => d.url.endsWith('?id=10')));
   assert.ok(!links.docs.some(d => d.url.endsWith('?id=11')), 'diárias não são atos de pessoal');
 });
+
+test('endereço da Câmara: rodapé do site e reserva no cadastro', async () => {
+  const { extractAddress, registryAddress } = await import('../lib/address.js');
+  const html = `<html><body><h1>Câmara Municipal de Altamira do Paraná</h1>
+    <p>Notícia: obras na Rua das Flores continuam.</p>
+    <footer><div>fale conosco</div><div>(44) 3755-1052</div><div>camaraaltamira@camaraaltamira.pr.gov.br</div>
+    <div>Localização</div><div>Rua Cantú, 180 - Centro - Altamira- - 85.280-000</div></footer></body></html>`;
+  const a = extractAddress(html, 'https://www.camaraaltamira.pr.gov.br/', 'Altamira do Paraná');
+  assert.equal(a.text, 'Rua Cantú, 180 - Centro - Altamira - 85.280-000');
+  assert.equal(a.cep, '85280-000');
+  const b = extractAddress('<footer>Av. Brasil, 200 | Fone: (44) 3232-1000 | CEP 87390-000</footer>', 'https://x/', 'Boa Esperança');
+  assert.match(b.text, /^Av\. Brasil, 200/);
+  assert.ok(!/Fone/.test(b.text), 'corta antes do telefone');
+  const r = registryAddress({ address: 'Rua Rui Barbosa, 98, Barra do Jacaré - PR, 86385-000 Centro', cep: '86385-000' }, 'Barra do Jacaré', 'PR');
+  assert.equal(r.cep, '86385-000');
+  assert.match(r.text, /^Rua Rui Barbosa, 98 - Barra do Jacaré\/PR$/);
+});

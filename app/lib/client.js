@@ -152,9 +152,15 @@ export function download(text, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export const CONTACT_HEADER = ['UF', 'Município', 'Nome', 'Cargo', 'Setor', 'Prioridade', 'E-mail', 'Tipo de e-mail', 'Telefone', 'Confiança', 'Nível', 'Origem', 'Fonte'];
-export function contactRow(uf, city, c, sectorLabel) {
-  return [uf, city, c.name, c.role, sectorLabel[c.sector || ''] || '', c.priority, c.email, c.emailKind, c.phone, c.confidence, c.confidenceLabel, c.type, c.source];
+export const CONTACT_HEADER = ['UF', 'Município', 'Nome', 'Cargo', 'Setor', 'Prioridade', 'E-mail', 'Tipo de e-mail', 'Telefone', 'Confiança', 'Nível', 'Origem', 'Fonte', 'Endereço da Câmara', 'CEP'];
+export function contactRow(uf, city, c, sectorLabel, address) {
+  return [uf, city, c.name, c.role, sectorLabel[c.sector || ''] || '', c.priority, c.email, c.emailKind, c.phone, c.confidence, c.confidenceLabel, c.type, c.source, address?.text || '', address?.cep || ''];
+}
+
+/** Endereço em uma linha: "Rua X, 123 - Centro · CEP 00000-000". */
+export function formatAddress(a) {
+  if (!a?.text) return '';
+  return a.text + (a.cep && !a.text.replace(/\D/g, '').includes(a.cep.replace(/\D/g, '')) ? ' · CEP ' + a.cep : '');
 }
 
 export function formatDuration(ms) {

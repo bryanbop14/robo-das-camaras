@@ -4,7 +4,7 @@ import ContactTable from './ContactTable';
 import AssistedCapture, { mergeManual } from './AssistedCapture';
 import { uniqUrls } from './CityScan';
 import { SECTOR_LABEL } from '../../lib/text.js';
-import { CONTACT_HEADER, contactRow, download, formatDuration, hintFor, RETRY_STATUSES, runScan, STATUS_LABEL, STATUS_TONE, toCsv } from '../lib/client.js';
+import { CONTACT_HEADER, contactRow, download, formatAddress, formatDuration, hintFor, RETRY_STATUSES, runScan, STATUS_LABEL, STATUS_TONE, toCsv } from '../lib/client.js';
 
 const STORE_VERSION = 5;
 const key = uf => 'riole-camaras-sweep-v' + STORE_VERSION + '-' + uf;
@@ -17,7 +17,7 @@ function report(city, data) {
     id: city.id, city: city.nome, status: data.status || 'erro',
     contacts: (data.contacts || []).map(c => ({ ...c, city: city.nome })),
     officialSite: data.officialSite || '', saplUrl: data.saplUrl || '', platform: data.platform || '',
-    registry: data.registry || null, pagesVisited: data.pagesVisited || 0,
+    registry: data.registry || null, address: data.address || null, pagesVisited: data.pagesVisited || 0,
     warning: (data.warnings || []).join(' '), elapsedMs: data.elapsedMs || 0,
     attempts: (data.attempts || []).slice(0, 12), finishedAt: new Date().toISOString(),
     robotsText: (data.robotsText || '').slice(0, 800), blockedUrls: (data.blockedUrls || []).slice(0, 4),
@@ -133,14 +133,14 @@ export default function StateSweep({ uf, cities, citiesLoading, registry }) {
   }
   function exportContacts() {
     const rows = [CONTACT_HEADER];
-    for (const r of results) for (const c of r.contacts) rows.push(contactRow(uf, r.city, c, SECTOR_LABEL));
+    for (const r of results) for (const c of r.contacts) rows.push(contactRow(uf, r.city, c, SECTOR_LABEL, r.address));
     download(toCsv(rows), `contatos-camaras-${uf.toLowerCase()}.csv`);
   }
   function exportChambers() {
-    const rows = [['UF', 'Município', 'Situação', 'CNPJ', 'Endereço', 'E-mail (cadastro)', 'Telefone (cadastro)', 'Site', 'SAPL', 'Plataforma', 'Contatos', 'Prioritários', 'Melhor contato', 'Cargo', 'E-mail do contato', 'Telefone do contato']];
+    const rows = [['UF', 'Município', 'Situação', 'CNPJ', 'Endereço', 'CEP', 'Origem do endereço', 'E-mail (cadastro)', 'Telefone (cadastro)', 'Site', 'SAPL', 'Plataforma', 'Contatos', 'Prioritários', 'Melhor contato', 'Cargo', 'E-mail do contato', 'Telefone do contato']];
     for (const r of [...results].sort((a, b) => a.city.localeCompare(b.city, 'pt-BR'))) {
       const b = best(r), reg = r.registry || {};
-      rows.push([uf, r.city, STATUS_LABEL[r.status] || r.status, reg.cnpj, reg.address, reg.email, reg.phone, r.officialSite, r.saplUrl, r.platform,
+      rows.push([uf, r.city, STATUS_LABEL[r.status] || r.status, reg.cnpj, r.address?.text || reg.address, r.address?.cep || '', r.address?.origin || (reg.address ? 'cadastro Interlegis' : ''), reg.email, reg.phone, r.officialSite, r.saplUrl, r.platform,
         r.contacts.length, r.contacts.filter(c => c.priority >= 4).length, b?.name, b?.role, b?.email, b?.phone]);
     }
     download(toCsv(rows), `camaras-${uf.toLowerCase()}.csv`);
@@ -211,6 +211,7 @@ export default function StateSweep({ uf, cities, citiesLoading, registry }) {
             </tr>
             {open === r.id && <tr className="detail"><td colSpan={5}>
               {(r.warning || r.error) && <p className="warn">{r.error || r.warning}</p>}
+              {r.address && <p className="small">📍 {formatAddress(r.address)} <span className="muted">({r.address.origin})</span></p>}
               {r.platform && <p className="muted small">Plataforma: {r.platform} · {r.pagesVisited} páginas em {(r.elapsedMs / 1000).toFixed(1)} s</p>}
               <ContactTable contacts={r.contacts} />
               {RETRY_STATUSES.has(r.status) && <AssistedCapture urls={uniqUrls(r)} robotsText={r.robotsText}
