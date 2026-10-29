@@ -326,3 +326,153 @@ test('endereço da Câmara: rodapé do site e reserva no cadastro', async () => 
   assert.equal(r.cep, '86385-000');
   assert.match(r.text, /^Rua Rui Barbosa, 98 - Barra do Jacaré\/PR$/);
 });
+
+// ---------------- Vínculo contato × município (testes obrigatórios A–F + regressões) ----------------
+
+const MARIOPOLIS = {
+  '/robots.txt': 'User-agent: *\nAllow: /\n',
+  '/': `<html><head><title>Página Inicial — Poder Legislativo Municipal</title></head><body>
+    <header><img alt="Câmara Municipal de Mariópolis" src="/logo.png"><h1>Câmara Municipal de Mariópolis</h1></header>
+    <p>Vereadores, sessões e transparência.</p>
+    <footer>camara@mariopolis.pr.leg.br · (46) 3226-1111 · Rua Principal, 100 - Centro - Mariópolis/PR</footer></body></html>`,
+};
+
+test('A — busca por Carlópolis que cai numa página de Mariópolis não atribui o contato a Carlópolis', async () => {
+  const site = await serve(MARIOPOLIS);
+  try {
+    // Simula o defeito antigo: o cadastro "parecido" indicava o site de Mariópolis para Carlópolis.
+    const r = await scanCamara('Carlópolis', 'PR', { fast: true, hint: { site: site.origin + '/' } });
+    assert.equal(r.officialSite, '', 'site de outro município não é aceito');
+    assert.equal(r.status, 'site_nao_validado');
+    assert.ok(!r.contacts.some(c => c.email === 'camara@mariopolis.pr.leg.br'), 'nenhum contato de Mariópolis em Carlópolis');
+    assert.ok(r.attempts.some(a => /outro município/.test(a.reason || '')), 'motivo registrado na auditoria');
+    // O mesmo site, pesquisado pela própria Mariópolis, é aceito com evidências.
+    const own = await scanCamara('Mariópolis', 'PR', { fast: true, hint: { site: site.origin + '/' } });
+    assert.equal(own.officialSite, site.origin);
+    assert.ok(own.siteValidation.evidence.some(e => /Mariópolis/.test(e)));
+    assert.ok(own.contacts.some(c => c.email === 'camara@mariopolis.pr.leg.br' && c.validation === 'VALIDADO'));
+  } finally { site.server.close(); }
+});
+
+test('A2 — o cadastro só casa o MESMO município (sem trocar nomes parecidos)', () => {
+  const entries = ['Mariópolis', 'Tapira', 'Guaporema', 'Mandaguaçu', 'Terra Roxa', 'Boa Esperança', 'Matelândia', "Diamante D'Oeste"]
+    .map(city => ({ city, cityKey: city.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '') }));
+  for (const c of ['Carlópolis', 'Janiópolis', 'Japira', 'Guapirama', 'Mandaguari', 'Terra Rica', 'Nova Esperança', 'Cafelândia']) {
+    assert.equal(matchRegistry(entries, c), null, c + ' não pode herdar o cadastro de outro município');
+  }
+  assert.equal(matchRegistry(entries, 'Diamante do Oeste')?.city, "Diamante D'Oeste", 'mesma grafia sem apóstrofo continua casando');
+});
+
+test('B — e-mail do Tribunal de Contas em página da Câmara vira ORGAO_EXTERNO, não contato', async () => {
+  const { classifyContact, externalInstitution } = await import('../lib/validate.js');
+  const ctx = { city: 'Barbosa Ferraz', uf: 'PR', siteHosts: new Set(['cmbf.pr.gov.br']), siteValidated: true };
+  const v = classifyContact({ email: 'presidencia@tce.pr.gov.br', role: 'Presidente', source: 'https://www.cmbf.pr.gov.br/index.php?meio=16037', type: 'setor' }, ctx);
+  assert.equal(v.validation, 'ORGAO_EXTERNO');
+  assert.match(v.reason, /tce\.pr\.gov\.br/);
+  assert.ok(externalInstitution('mppr.mp.br'));
+  assert.ok(externalInstitution('receita.fazenda.gov.br'));
+  assert.equal(externalInstitution('cmbf.pr.gov.br'), '');
+  // Fluxo completo: o e-mail aparece no site validado e sai da lista principal para "review".
+  const site = await serve({
+    '/robots.txt': 'User-agent: *\nAllow: /\n',
+    '/': '<html><head><title>Câmara Municipal de Barbosa Ferraz</title></head><body><h1>Câmara Municipal de Barbosa Ferraz</h1><p>Denúncias ao Tribunal de Contas: presidencia@tce.pr.gov.br</p><footer>falecom@cmbf.pr.gov.br (44) 3275-2241</footer></body></html>',
+  });
+  try {
+    const r = await scanCamara('Barbosa Ferraz', 'PR', { fast: true, hint: { site: site.origin + '/' } });
+    assert.ok(!r.contacts.some(c => c.email === 'presidencia@tce.pr.gov.br'));
+    assert.ok(r.review.some(c => c.email === 'presidencia@tce.pr.gov.br' && c.validation === 'ORGAO_EXTERNO'));
+    assert.ok(r.contacts.some(c => c.email === 'falecom@cmbf.pr.gov.br'));
+  } finally { site.server.close(); }
+});
+
+test('B2 — e-mail do cadastro com domínio de outro município é SUSPEITO (erro de origem)', async () => {
+  const { classifyContact } = await import('../lib/validate.js');
+  const v = classifyContact({ email: 'contato@centenariodosul.pr.gov.br', type: 'cadastro-interlegis', source: 'https://www12.senado.leg.br/interlegis/orgaosatendidos?uf=PR' },
+    { city: 'Jacarezinho', uf: 'PR', siteHosts: new Set(), siteValidated: false });
+  assert.equal(v.validation, 'SUSPEITO');
+  const ok = classifyContact({ email: 'contato@centenariodosul.pr.gov.br', type: 'cadastro-interlegis', source: 'https://www12.senado.leg.br/x' },
+    { city: 'Centenário do Sul', uf: 'PR', siteHosts: new Set(), siteValidated: false });
+  assert.equal(ok.validation, 'VALIDADO');
+});
+
+test('C — mesmo e-mail para Presidente e servidor na mesma Câmara: um registro, cargo estratégico', async () => {
+  const { hygiene } = await import('../lib/validate.js');
+  const { contacts, log } = hygiene([
+    { name: 'Ana Souza', role: 'Assistente Administrativo', sector: 'gestao', email: 'camara@x.pr.gov.br', confidence: 80, validation: 'VALIDADO' },
+    { name: 'João Lima', role: 'Presidente (Mesa Diretora)', sector: 'decisor', email: 'camara@x.pr.gov.br', confidence: 70, validation: 'VALIDADO' },
+    { name: 'Câmara de X', nameGenerated: true, role: 'Contato institucional', email: 'camara@x.pr.gov.br', confidence: 50, validation: 'VALIDADO' },
+  ]);
+  const withEmail = contacts.filter(c => c.email === 'camara@x.pr.gov.br');
+  assert.equal(withEmail.length, 1, 'um único registro com o e-mail');
+  assert.equal(withEmail[0].name, 'João Lima', 'Presidente prevalece');
+  const ana = contacts.find(c => c.name === 'Ana Souza');
+  assert.equal(ana.email, '', 'servidora preservada, sem duplicar o e-mail');
+  assert.equal(ana.sharedEmail, 'camara@x.pr.gov.br');
+  assert.equal(ana.role, 'Assistente Administrativo', 'cargo não é inventado nem trocado');
+  assert.ok(!contacts.some(c => c.nameGenerated), 'registro genérico duplicado removido');
+  assert.equal(log.length, 2, 'decisões registradas');
+});
+
+test('D — Gmail publicado na página oficial validada é aceito', async () => {
+  const { classifyContact } = await import('../lib/validate.js');
+  const v = classifyContact({ email: 'camaraabatia@gmail.com', source: 'https://www.abatia.pr.leg.br/contato', type: 'diretório' },
+    { city: 'Abatiá', uf: 'PR', siteHosts: new Set(['abatia.pr.leg.br']), siteValidated: true });
+  assert.equal(v.validation, 'VALIDADO');
+  const fora = classifyContact({ email: 'alguem@gmail.com', source: 'https://www.outrosite.com.br/x', type: 'busca' },
+    { city: 'Abatiá', uf: 'PR', siteHosts: new Set(['abatia.pr.leg.br']), siteValidated: true });
+  assert.equal(fora.validation, 'NAO_VALIDADO', 'fora do site validado não é confirmado');
+});
+
+test('E — municípios processados em paralelo não se contaminam', async () => {
+  const mk = (city, mail) => ({
+    '/robots.txt': 'User-agent: *\nAllow: /\n',
+    '/': `<html><head><title>Câmara Municipal de ${city}</title></head><body><h1>Câmara Municipal de ${city}</h1><p>Portal oficial do Poder Legislativo: vereadores, sessões, transparência, ouvidoria e atendimento ao cidadão.</p><a href="/contato">Contato</a><footer>${mail} (44) 3000-0000</footer></body></html>`,
+    '/contato': `<html><head><title>Contato - Câmara Municipal de ${city}</title></head><body><h1>Contato</h1><p>Presidente: Fulano de ${city.split(' ')[0]} Silva ${mail}</p></body></html>`,
+  });
+  const a = await serve(mk('Alfa Lindo', 'camara@alfalindo.pr.leg.br'));
+  const b = await serve(mk('Beta Bonito', 'camara@betabonito.pr.leg.br'));
+  try {
+    const [ra, rb, ra2] = await Promise.all([
+      scanCamara('Alfa Lindo', 'PR', { fast: true, hint: { site: a.origin + '/' } }),
+      scanCamara('Beta Bonito', 'PR', { fast: true, hint: { site: b.origin + '/' } }),
+      // Beta pesquisada com o site de Alfa por engano, ao mesmo tempo.
+      scanCamara('Beta Bonito', 'PR', { fast: true, hint: { site: a.origin + '/' } }),
+    ]);
+    assert.ok(ra.contacts.every(c => !/betabonito/.test(c.email)) && ra.contacts.some(c => /alfalindo/.test(c.email)));
+    assert.ok(rb.contacts.every(c => !/alfalindo/.test(c.email)) && rb.contacts.some(c => /betabonito/.test(c.email)));
+    assert.ok(ra2.contacts.every(c => !/alfalindo/.test(c.email)), 'site de Alfa nunca é atribuído a Beta');
+    assert.notEqual(ra.runId, rb.runId);
+    for (const c of ra.contacts) { assert.equal(c.city, 'Alfa Lindo'); assert.equal(c.runId, ra.runId); }
+  } finally { a.server.close(); b.server.close(); }
+});
+
+test('F — mesmo e-mail em fontes legítimas de dois municípios: preserva e sinaliza, sem escolher um', async () => {
+  const { crossCheck } = await import('../lib/crosscheck.js');
+  const shared = 'consorcio.legislativo@gmail.com';
+  const results = [
+    { id: 1, city: 'Alfa', officialSite: 'https://www.alfa.pr.leg.br', siteValidation: { evidence: [] }, contacts: [{ email: shared, role: 'Contato', source: 'https://www.alfa.pr.leg.br/contato', type: 'diretório', validation: 'VALIDADO' }] },
+    { id: 2, city: 'Beta', officialSite: 'https://www.beta.pr.leg.br', siteValidation: { evidence: [] }, contacts: [{ email: shared, role: 'Contato', source: 'https://www.beta.pr.leg.br/fale', type: 'diretório', validation: 'VALIDADO' }] },
+    // Contaminação: Gama recebeu o contato a partir de uma página de Alfa.
+    { id: 3, city: 'Gama', officialSite: 'https://www.gama.pr.leg.br', siteValidation: { evidence: [] }, contacts: [{ email: shared, role: 'Contato', source: 'https://www.alfa.pr.leg.br/contato', type: 'diretório', validation: 'VALIDADO' }] },
+  ];
+  const { results: out, decisions } = crossCheck(results);
+  assert.equal(out[0].contacts.length, 1);
+  assert.equal(out[1].contacts.length, 1);
+  assert.deepEqual(out[0].contacts[0].sharedAcross.sort(), ['Beta', 'Gama']);
+  assert.equal(out[2].contacts.length, 0, 'vínculo de Gama (fonte de Alfa) removido');
+  assert.ok(out[2].review.some(c => c.email === shared), 'removido vai para revisão, não some');
+  assert.equal(decisions.filter(d => d.decisao === 'removido').length, 1);
+  assert.equal(decisions.filter(d => d.decisao.startsWith('mantido')).length, 2);
+});
+
+test('F2 — resultados antigos com site de outro município são saneados e marcados para refazer', async () => {
+  const { crossCheck } = await import('../lib/crosscheck.js');
+  const { results: out, decisions } = crossCheck([
+    { id: 9, city: 'Carlópolis', status: 'parcial', officialSite: 'https://www.mariopolis.pr.leg.br', saplUrl: 'https://sapl.mariopolis.pr.leg.br',
+      contacts: [{ email: 'camara@mariopolis.pr.leg.br', source: 'https://www.mariopolis.pr.leg.br/', type: 'geral' },
+        { email: 'cm@camaraclps.pr.gov.br', source: 'https://www.gcau-consulta.casacivil.pr.gov.br/x', type: 'cadastro-autoridades' }] },
+  ]);
+  assert.equal(out[0].status, 'site_nao_validado');
+  assert.deepEqual(out[0].contacts.map(c => c.email), ['cm@camaraclps.pr.gov.br'], 'só o contato próprio (cadastro estadual) permanece');
+  assert.ok(decisions.some(d => /não pertence a Carlópolis/.test(d.motivo)));
+});

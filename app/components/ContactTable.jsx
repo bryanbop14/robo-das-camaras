@@ -54,7 +54,7 @@ export default function ContactTable({ contacts, showCity = false, limit = 500, 
         <td>{c.role || '—'}{c.sector && <div><span className={'tag tag-' + c.sector}>{SECTOR_LABEL[c.sector]}</span></div>}</td>
         <td>{c.email ? <a href={'mailto:' + c.email}>{c.email}</a> : '—'}{c.emailKind && <div className="muted small">{c.emailKind}</div>}</td>
         <td className="nowrap">{c.phone || '—'}</td>
-        <td><span className={'conf conf-' + (c.confidenceLabel === 'média' ? 'media' : c.confidenceLabel)}>{c.confidence ?? '—'}</span></td>
+        <td><span className={'conf conf-' + (c.confidenceLabel === 'média' ? 'media' : c.confidenceLabel)}>{c.confidence ?? '—'}</span>{c.validation && <div className={'small ' + (c.validation === 'VALIDADO' ? 'muted' : 'warn')} title={[c.evidence, c.validationReason, c.crossReason].filter(Boolean).join(' | ')}>{c.validation === 'VALIDADO' ? 'validado' : c.validation === 'NAO_VALIDADO' ? 'não validado' : c.validation.toLowerCase()}{c.sharedAcross?.length ? ' · compartilhado' : ''}</div>}{c.sharedEmail && <div className="muted small" title={c.note}>e-mail geral: {c.sharedEmail}</div>}</td>
         <td><a href={c.source} target="_blank" rel="noreferrer">{c.type || 'fonte'}</a></td>
       </tr>)}</tbody>
     </table></div>

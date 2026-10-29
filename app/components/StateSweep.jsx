@@ -4,6 +4,7 @@ import ContactTable from './ContactTable';
 import AssistedCapture, { mergeManual } from './AssistedCapture';
 import { uniqUrls } from './CityScan';
 import { SECTOR_LABEL } from '../../lib/text.js';
+import { crossCheck, qualityReport } from '../../lib/crosscheck.js';
 import { CONTACT_HEADER, contactRow, download, formatAddress, formatDuration, hintFor, RETRY_STATUSES, runScan, STATUS_LABEL, STATUS_TONE, toCsv } from '../lib/client.js';
 
 const STORE_VERSION = 5;
@@ -21,6 +22,8 @@ function report(city, data) {
     warning: (data.warnings || []).join(' '), elapsedMs: data.elapsedMs || 0,
     attempts: (data.attempts || []).slice(0, 12), finishedAt: new Date().toISOString(),
     robotsText: (data.robotsText || '').slice(0, 800), blockedUrls: (data.blockedUrls || []).slice(0, 4),
+    review: (data.review || []).slice(0, 40).map(c => ({ ...c, city: city.nome })), quality: data.quality || null,
+    siteValidation: data.siteValidation || null, runId: data.runId || '',
   };
 }
 /** Endereço do resultado; resultados antigos (salvos antes do campo existir) usam o endereço do cadastro. */
@@ -46,7 +49,12 @@ export default function StateSweep({ uf, cities, citiesLoading, registry }) {
   }, [uf]);
 
   const total = snap?.cities?.length || cities.length || 0;
-  const results = useMemo(() => Object.values(snap?.results || {}), [snap]);
+  const rawResults = useMemo(() => Object.values(snap?.results || {}), [snap]);
+  // Verificação entre municípios (e-mail atribuído a mais de uma Câmara) sobre os resultados salvos; as decisões ficam registradas.
+  const checked = useMemo(() => crossCheck(rawResults), [rawResults]);
+  const results = checked.results;
+  const decisions = checked.decisions;
+  const quality = useMemo(() => qualityReport(results, decisions), [results, decisions]);
   const done = results.length;
   const counts = useMemo(() => results.reduce((m, r) => (m[r.status] = (m[r.status] || 0) + 1, m), {}), [results]);
   const allContacts = useMemo(() => results.flatMap(r => r.contacts), [results]);
@@ -76,7 +84,9 @@ export default function StateSweep({ uf, cities, citiesLoading, registry }) {
     if (citiesLoading || !cities.length) return;
     const base = state.current || { version: STORE_VERSION, uf, cities: cities.map(c => ({ id: c.id, nome: c.nome })), results: {}, startedAt: new Date().toISOString() };
     if (retryPending) {
-      const kept = Object.fromEntries(Object.entries(base.results).filter(([, r]) => !RETRY_STATUSES.has(r.status) || r.manual));
+      // Usa a situação já verificada (inclui sites recusados por serem de outro município).
+      const viewStatus = new Map(crossCheck(Object.values(base.results)).results.map(r => [String(r.id), r.status]));
+      const kept = Object.fromEntries(Object.entries(base.results).filter(([id, r]) => !RETRY_STATUSES.has(viewStatus.get(String(id)) || r.status) || r.manual));
       commit({ ...base, results: kept });
     } else commit(base);
     setNotice(''); setPhase('running');
@@ -147,6 +157,21 @@ export default function StateSweep({ uf, cities, citiesLoading, registry }) {
     }
     download(toCsv(rows), `camaras-${uf.toLowerCase()}.csv`);
   }
+  function exportInconsistencies() {
+    const rows = [['UF', 'E-mail', 'Municípios envolvidos', 'Município da ocorrência', 'Cargo', 'Fonte', 'Evidência', 'Motivo', 'Decisão']];
+    for (const d of decisions) rows.push([uf, d.email, d.municipios, d.municipio, d.cargo, d.fonte, d.evidencia, d.motivo, d.decisao]);
+    for (const r of results) for (const c of r.review || []) rows.push([uf, c.email, r.city, r.city, c.role, c.source, c.evidence || '', c.validationReason || '', c.validation === 'ORGAO_EXTERNO' ? 'separado (órgão externo)' : 'separado para revisão']);
+    download(toCsv(rows), `inconsistencias-camaras-${uf.toLowerCase()}.csv`);
+  }
+  function exportQuality() {
+    const q = quality;
+    const rows = [['Indicador', 'Valor'],
+      ['Municípios pesquisados', q.municipios], ['Com site oficial validado', q.comSiteValidado], ['Sem validação', q.semValidacao], ['Site recusado (outro município)', q.siteNaoValidado],
+      ['Contatos extraídos', q.contatosExtraidos], ['Contatos validados', q.contatosValidados], ['Contatos não validados (revisar)', q.contatosNaoValidados],
+      ['Contatos suspeitos', q.contatosSuspeitos], ['Contatos de órgãos externos', q.orgaosExternos], ['E-mails em mais de um município', q.emailsDuplicadosEntreMunicipios],
+      ['Associações incorretas removidas', q.associacoesRemovidas], ['Itens para revisão manual', q.revisaoManual], ['Municípios sem contato confiável', q.semContatoConfiavel.join(', ')]];
+    download(toCsv(rows), `qualidade-camaras-${uf.toLowerCase()}.csv`);
+  }
   function exportAudit() {
     const rows = [['UF', 'Município', 'Situação', 'Site', 'SAPL', 'Contatos', 'Páginas', 'Duração (ms)', 'Observação', 'Erro', 'Tentativas', 'Data']];
     for (const r of results) rows.push([uf, r.city, r.status, r.officialSite, r.saplUrl, r.contacts.length, r.pagesVisited, r.elapsedMs, r.warning, r.error || '',
@@ -185,11 +210,26 @@ export default function StateSweep({ uf, cities, citiesLoading, registry }) {
       <button className="secondaryBtn" disabled={!done} onClick={exportContacts}>Contatos CSV</button>
       <button className="secondaryBtn" disabled={!done} onClick={exportChambers}>Câmaras CSV</button>
       <button className="secondaryBtn" disabled={!done} onClick={exportAudit}>Auditoria CSV</button>
+      <button className="secondaryBtn" disabled={!done} onClick={exportInconsistencies}>Inconsistências CSV</button>
+      <button className="secondaryBtn" disabled={!done} onClick={exportQuality}>Qualidade CSV</button>
       <button className="secondaryBtn" disabled={!snap} onClick={reset}>Reiniciar</button>
     </div>
     {notice && <p role="status" className={notice.includes('cheio') ? 'error' : 'success'}>{notice}</p>}
     {waitingRegistry && <p className="muted small">A varredura começa quando o cadastro oficial terminar de carregar — ele evita testar domínios às cegas.</p>}
 
+    {done > 0 && <details className="audit" open={phase === 'finished'}>
+      <summary>Relatório de qualidade · {quality.contatosValidados} validados · {quality.contatosSuspeitos + quality.orgaosExternos} separados · {quality.associacoesRemovidas} vínculos entre municípios removidos</summary>
+      <div className="grid metrics six">
+        <div><label>Sites validados</label><div className="count">{quality.comSiteValidado}<span className="muted small"> / {quality.municipios}</span></div></div>
+        <div><label>Contatos validados</label><div className="count">{quality.contatosValidados}</div></div>
+        <div><label>Não validados</label><div className="count">{quality.contatosNaoValidados}</div></div>
+        <div><label>Suspeitos</label><div className="count">{quality.contatosSuspeitos}</div></div>
+        <div><label>Órgãos externos</label><div className="count">{quality.orgaosExternos}</div></div>
+        <div><label>E-mails em 2+ municípios</label><div className="count">{quality.emailsDuplicadosEntreMunicipios}</div></div>
+      </div>
+      <p className="muted small">Vínculos incorretos removidos: {quality.associacoesRemovidas} · para revisão manual: {quality.revisaoManual} · sites recusados por serem de outro município: {quality.siteNaoValidado}.
+        {quality.semContatoConfiavel.length > 0 && <> Sem contato confiável: {quality.semContatoConfiavel.slice(0, 30).join(', ')}{quality.semContatoConfiavel.length > 30 ? '…' : ''}.</>}</p>
+    </details>}
     {done > 0 && <>
       <div className="tabs">
         <button className={view === 'camaras' ? 'tab on' : 'tab'} onClick={() => setView('camaras')}>Câmaras</button>
@@ -216,7 +256,10 @@ export default function StateSweep({ uf, cities, citiesLoading, registry }) {
               {(r.warning || r.error) && <p className="warn">{r.error || r.warning}</p>}
               {addrOf(r) && <p className="small">📍 {formatAddress(addrOf(r))} <span className="muted">({addrOf(r).origin})</span></p>}
               {r.platform && <p className="muted small">Plataforma: {r.platform} · {r.pagesVisited} páginas em {(r.elapsedMs / 1000).toFixed(1)} s</p>}
+              {r.siteValidation?.evidence?.length > 0 && <p className="muted small">Site validado: {r.siteValidation.evidence.join(' · ')}</p>}
               <ContactTable contacts={r.contacts} />
+              {r.review?.length > 0 && <details><summary className="warn small">{r.review.length} contato(s) separados para revisão</summary>
+                <ul className="small">{r.review.map((c, i) => <li key={i}>{c.email || c.phone} — {c.validation}: {c.validationReason} <a href={c.source} target="_blank" rel="noreferrer">fonte</a></li>)}</ul></details>}
               {RETRY_STATUSES.has(r.status) && <AssistedCapture urls={uniqUrls(r)} robotsText={r.robotsText}
                 onAdd={added => addManual(r.id, added)} />}
             </td></tr>}

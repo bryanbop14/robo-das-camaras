@@ -73,7 +73,10 @@ export default function CityScan({ uf, cities, citiesLoading, registry }) {
         {result.platform && <span>Plataforma: {result.platform}</span>}
       </div>
       {result.address && <p className="small">📍 <strong>Endereço:</strong> {formatAddress(result.address)} <span className="muted">· fonte: {result.address.source && /^https?:/.test(result.address.source) ? <a href={result.address.source} target="_blank" rel="noreferrer">{result.address.origin}</a> : result.address.origin}</span></p>}
+      {result.siteValidation?.evidence?.length > 0 && <p className="muted small">Identidade do site confirmada: {result.siteValidation.evidence.join(' · ')}</p>}
       {result.warnings?.map((w, i) => <p key={i} className="warn">{w}</p>)}
+      {result.review?.length > 0 && <details className="audit"><summary>{result.review.length} contato(s) separados para revisão (órgão externo ou indício de outro município)</summary>
+        <ul className="small">{result.review.map((c, i) => <li key={i}>{c.email || c.phone} — {c.validation}: {c.validationReason} <a href={c.source} target="_blank" rel="noreferrer">fonte</a></li>)}</ul></details>}
       {['bloqueado', 'inacessivel', 'sem_site', 'parcial', 'fonte_alternativa'].includes(result.status) && <AssistedCapture
         key={result.city + result.elapsedMs}
         urls={uniqUrls(result)}

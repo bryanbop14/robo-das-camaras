@@ -8,11 +8,12 @@ export const STATUS_LABEL = {
   bloqueado: 'Bloqueado pelo site',
   inacessivel: 'Site inacessível',
   fonte_alternativa: 'Só cadastro oficial',
+  site_nao_validado: 'Site não validado',
   sem_site: 'Sem site localizado',
   erro: 'Erro',
 };
-export const STATUS_TONE = { concluido: 'ok', parcial: 'warn', fonte_alternativa: 'warn', bloqueado: 'bad', inacessivel: 'bad', sem_site: 'bad', erro: 'bad' };
-export const RETRY_STATUSES = new Set(['parcial', 'fonte_alternativa', 'bloqueado', 'inacessivel', 'sem_site', 'erro']);
+export const STATUS_TONE = { concluido: 'ok', parcial: 'warn', fonte_alternativa: 'warn', site_nao_validado: 'bad', bloqueado: 'bad', inacessivel: 'bad', sem_site: 'bad', erro: 'bad' };
+export const RETRY_STATUSES = new Set(['parcial', 'fonte_alternativa', 'site_nao_validado', 'bloqueado', 'inacessivel', 'sem_site', 'erro']);
 export const PRIORITY_SECTORS = new Set(['decisor', 'compras', 'ti', 'comunicacao']);
 
 function readJson(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; } }
@@ -152,9 +153,11 @@ export function download(text, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export const CONTACT_HEADER = ['UF', 'Município', 'Nome', 'Cargo', 'Setor', 'Prioridade', 'E-mail', 'Tipo de e-mail', 'Telefone', 'Confiança', 'Nível', 'Origem', 'Fonte', 'Endereço da Câmara', 'CEP'];
+export const CONTACT_HEADER = ['UF', 'Município', 'Nome', 'Cargo', 'Setor', 'Prioridade', 'E-mail', 'Tipo de e-mail', 'Telefone', 'Confiança', 'Nível', 'Origem', 'Fonte', 'Endereço da Câmara', 'CEP', 'Status de validação', 'Evidência', 'Domínio oficial', 'Município da fonte', 'E-mail compartilhado (Câmara)', 'Compartilhado com', 'Coletado em', 'Execução'];
 export function contactRow(uf, city, c, sectorLabel, address) {
-  return [uf, city, c.name, c.role, sectorLabel[c.sector || ''] || '', c.priority, c.email, c.emailKind, c.phone, c.confidence, c.confidenceLabel, c.type, c.source, address?.text || '', address?.cep || ''];
+  return [uf, city, c.name, c.role, sectorLabel[c.sector || ''] || '', c.priority, c.email, c.emailKind, c.phone, c.confidence, c.confidenceLabel, c.type, c.source, address?.text || '', address?.cep || '',
+    c.validation || 'NAO_VERIFICADO', [c.evidence, c.validationReason, c.crossReason].filter(Boolean).join(' | '), c.officialDomain || '', c.sourceCity || '',
+    c.sharedEmail || '', (c.sharedAcross || []).join(', '), c.collectedAt || '', c.runId || ''];
 }
 
 /** Endereço em uma linha: "Rua X, 123 - Centro · CEP 00000-000". */
