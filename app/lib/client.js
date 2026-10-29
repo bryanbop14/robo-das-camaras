@@ -19,52 +19,74 @@ function readJson(key) { try { return JSON.parse(localStorage.getItem(key) || 'n
 function writeJson(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; } }
 
 const REGISTRY_TTL = 7 * 24 * 60 * 60 * 1000;
-const REGISTRY_KEY = uf => 'riole-registry-v1-' + uf;
+const REGISTRY_KEY = uf => 'riole-registry-v2-' + uf;
 
-/** Carrega o cadastro Interlegis do estado (em lotes paralelos) e o guarda por 7 dias no navegador. */
+/** Carrega o cadastro Interlegis do estado (em lotes paralelos controlados) e o guarda por 7 dias no navegador. */
 export function useRegistry(uf) {
   const [state, setState] = useState({ status: 'idle', entries: [], pages: 0, loaded: 0, failed: 0, updatedAt: null });
   const run = useRef(0);
   const load = useCallback(async (force = false) => {
     const id = ++run.current;
     const cached = !force && readJson(REGISTRY_KEY(uf));
-    if (cached && Date.now() - cached.time < REGISTRY_TTL && cached.entries?.length) {
-      setState({ status: 'ready', entries: cached.entries, pages: cached.pages, loaded: cached.pages, failed: cached.failed || 0, updatedAt: cached.time });
+    if (cached && Date.now() - cached.time < REGISTRY_TTL && cached.entries?.length && !cached.failed) {
+      setState({ status: 'ready', entries: cached.entries, pages: cached.pages, loaded: cached.pages, failed: 0, updatedAt: cached.time });
       return;
     }
     setState({ status: 'loading', entries: [], pages: 0, loaded: 0, failed: 0, updatedAt: null });
     const all = [];
-    let failed = 0;
-    const fetchBatch = async (from, to) => {
-      const r = await fetch(`/api/registry?uf=${uf}&from=${from}&to=${to}`);
+    const failedPages = new Set();
+    const fetchBatch = async (from, to, bypassCache = force) => {
+      const qs = `uf=${uf}&from=${from}&to=${to}&v=2` + (bypassCache ? `&refresh=1&t=${Date.now()}` : '');
+      const r = await fetch(`/api/registry?${qs}`, bypassCache ? { cache: 'no-store' } : undefined);
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     };
     try {
-      const first = await fetchBatch(1, 6);
+      let first = await fetchBatch(1, 4, force);
+      if (!first.entries?.length && !force) {
+        first = await fetchBatch(1, 4, true);
+      }
       if (id !== run.current) return;
       const last = Math.max(first.lastPage || 1, 1);
-      all.push(...first.entries);
-      failed += first.pages.filter(p => p.status !== 200).length;
-      let loaded = Math.min(6, last);
+      all.push(...(first.entries || []));
+      for (const p of (first.pages || [])) if (p.status !== 200) failedPages.add(p.page);
+      let loaded = Math.min(4, last);
       setState(s => ({ ...s, pages: last, loaded, entries: [...all] }));
       const batches = [];
-      for (let p = 7; p <= last; p += 8) batches.push([p, Math.min(p + 7, last)]);
+      for (let p = 5; p <= last; p += 6) batches.push([p, Math.min(p + 5, last)]);
       let cursor = 0;
       const worker = async () => {
         while (cursor < batches.length && id === run.current) {
           const [from, to] = batches[cursor++];
           try {
-            const r = await fetchBatch(from, to);
-            all.push(...r.entries);
-            failed += r.pages.filter(p => p.status !== 200).length;
-          } catch { failed += to - from + 1; }
+            const r = await fetchBatch(from, to, force);
+            all.push(...(r.entries || []));
+            for (const p of (r.pages || [])) if (p.status !== 200) failedPages.add(p.page);
+          } catch {
+            for (let p = from; p <= to; p++) failedPages.add(p);
+          }
           loaded += to - from + 1;
           if (id === run.current) setState(s => ({ ...s, loaded, entries: [...all] }));
         }
       };
-      await Promise.all([worker(), worker(), worker()]);
+      await Promise.all([worker(), worker()]);
       if (id !== run.current) return;
+
+      // Retenta individualmente páginas que tenham falhado por oscilação do Senado
+      if (failedPages.size > 0 && failedPages.size <= 12) {
+        for (const pageNum of [...failedPages]) {
+          if (id !== run.current) return;
+          try {
+            const retry = await fetchBatch(pageNum, pageNum, true);
+            if (retry.pages?.[0]?.status === 200) {
+              all.push(...(retry.entries || []));
+              failedPages.delete(pageNum);
+            }
+          } catch {}
+        }
+      }
+
+      const failed = failedPages.size;
       const dedup = [...new Map(all.map(e => [e.cnpj || e.cityKey, e])).values()];
       const time = Date.now();
       if (dedup.length) writeJson(REGISTRY_KEY(uf), { time, entries: dedup, pages: last, failed });
