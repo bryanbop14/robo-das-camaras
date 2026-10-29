@@ -100,6 +100,29 @@ export default function StateSweep({ uf, cities, citiesLoading, registry }) {
       }
     };
     await Promise.all(Array.from({ length: Math.min(parallel, Math.max(1, queue.length)) }, worker));
+
+    // Repescagem automática: municípios sem site ou com até 1 contato são refeitos um por vez (sem disputar
+    // o mesmo servidor com outras Câmaras do provedor) e em modo completo; só substitui se o resultado melhorar.
+    if (id === run.current) {
+      const weak = state.current.cities.filter(c => {
+        const r = state.current.results[c.id];
+        return r && !r.manual && !r.rescued && (RETRY_STATUSES.has(r.status) || r.contacts.length <= 1);
+      });
+      for (let i = 0; i < weak.length && id === run.current; i++) {
+        const city = weak[i];
+        setNotice(`Repescagem: refazendo ${city.nome} (${i + 1}/${weak.length}) com mais tempo e sem concorrência…`);
+        const c = new AbortController(); ctrls.current.add(c);
+        try {
+          const res = await runScan({ uf, city: city.nome, hint: hintFor(registry.entries, city.nome), fast: false, signal: c.signal });
+          if (id !== run.current) break;
+          const prev = state.current.results[city.id];
+          const rep = { ...report(city, res), rescued: true };
+          const better = rep.contacts.length > prev.contacts.length || (!prev.officialSite && rep.officialSite);
+          commit({ ...state.current, results: { ...state.current.results, [city.id]: better ? rep : { ...prev, rescued: true } } });
+        } catch (e) { if (e.name === 'AbortError') break; }
+        finally { ctrls.current.delete(c); }
+      }
+    }
     if (id === run.current) { setPhase('finished'); setNotice('Varredura finalizada. Os municípios em "Exigem revisão" podem ser reprocessados.'); }
   }
 
