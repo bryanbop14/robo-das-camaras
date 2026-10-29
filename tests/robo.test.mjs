@@ -241,3 +241,71 @@ test('domínios abreviados (siglas RJ) e cartões multilinhas com departamentos'
   assert.equal(byEmail('controladoria@cmdc.rj.gov.br').name, 'Amaury Lopes de Almeida Nogueira');
   assert.equal(byEmail('chiquinhocaipira@cmdc.rj.gov.br').name, 'Ailton Abreu Nascimento');
 });
+
+test('descoberta inteligente: primeiro nome do município e domínio do e-mail institucional', async () => {
+  const { heuristicDomains, domainsFromEmails } = await import('../lib/crawler.js');
+  const alt = heuristicDomains('Altamira do Paraná', 'PR');
+  assert.ok(alt.indexOf('https://www.camaraaltamira.pr.gov.br') > -1 && alt.indexOf('https://www.camaraaltamira.pr.gov.br') < 40, 'camaraaltamira.pr.gov.br entra na primeira onda');
+  const fromMail = domainsFromEmails(['camara@cmadrianopolis.pr.gov.br', 'fulano@gmail.com', 'gabinete@pmadrianopolis.pr.gov.br']);
+  assert.deepEqual(fromMail, ['https://www.cmadrianopolis.pr.gov.br', 'https://cmadrianopolis.pr.gov.br']);
+});
+
+test('Mesa Diretora em cartões "cargo + nome" (nos dois sentidos) e consolidação de e-mail pessoal', async () => {
+  const { mergeContacts } = await import('../lib/extract.js');
+  const nameFirst = `<title>Mesa Diretora</title><h1>Mesa Diretora</h1>
+    <div><span>Sandro Junior dos Santos - União Brasil</span><b>PRESIDENTE</b></div>
+    <div><span>Luiz Gonçalves da Silva - União Brasil</span><b>VICE-PRESIDENTE</b></div>
+    <div><span>Ronaldo de Almeida Santos - PSD</span><b>1º SECRETÁRIO</b></div>
+    <footer>camara@cmx.pr.gov.br (41) 3678-1515</footer>`;
+  const a = extractContacts(nameFirst, 'https://cmx.pr.gov.br/?pag=mesa');
+  const roleOf = (list, n) => list.find(c => c.name === n)?.role;
+  assert.equal(roleOf(a, 'Sandro Junior dos Santos'), 'Presidente (Mesa Diretora)');
+  assert.equal(roleOf(a, 'Luiz Gonçalves da Silva'), 'Vice-Presidente (Mesa Diretora)');
+  assert.equal(roleOf(a, 'Ronaldo de Almeida Santos'), '1º Secretário(a) (Mesa Diretora)');
+
+  const roleFirst = `<title>Câmara</title><h1>Conheça os integrantes da Mesa Diretora</h1>
+    <div><span>PSD</span><b>Presidente</b><h3>SERGIO MESQUITA DE OLIVEIRA</h3><p>Saiba Mais</p></div>
+    <div><span>PP</span><b>Vice-Presidente</b><h3>JOSE CARLOS DE SOUZA</h3><p>Saiba Mais</p></div>
+    <div><span>PSD</span><b>2º Vice-Presidente</b><h3>VALDIRENE DA SILVA LEAL</h3></div>
+    <footer>camara@cmy.pr.gov.br (44) 3755-1052</footer>`;
+  const b = extractContacts(roleFirst, 'https://cmy.pr.gov.br/?meio=15521');
+  assert.equal(roleOf(b, 'Sergio Mesquita de Oliveira'), 'Presidente (Mesa Diretora)');
+  assert.equal(roleOf(b, 'Valdirene da Silva Leal'), '2º Vice-Presidente (Mesa Diretora)');
+
+  const merged = mergeContacts([...b, { name: 'Serginho Boiadeiro', role: '', sector: '', email: 'sergiomesquitadeoliveira@gmail.com', phone: '', source: 'x', type: 'diretório' }], ['cmy.pr.gov.br']);
+  const sergio = merged.find(c => c.name === 'Sergio Mesquita de Oliveira');
+  assert.equal(sergio.email, 'sergiomesquitadeoliveira@gmail.com', 'e-mail pessoal ligado ao nome oficial');
+  assert.ok(!merged.some(c => c.name === 'Serginho Boiadeiro'));
+  assert.equal(plausibleNameOf('Evandro Gonçalves Pontes - Evandro Gonçalves Pontes - PSD'), 'Evandro Gonçalves Pontes');
+  assert.equal(plausibleNameOf('Aumentar Fonte'), '');
+});
+
+const { plausibleName: plausibleNameOf } = await import('../lib/extract.js');
+
+test('robô de atos oficiais: nomeações vigentes, função designada e exoneração posterior', async () => {
+  const { extractActs, actRecords, actLinks } = await import('../lib/acts.js');
+  const now = new Date('2026-06-01');
+  const docs = [
+    'PORTARIA Nº 015/2025 RESOLVE: Art. 1º NOMEAR o Senhor JOÃO CARLOS DA SILVA, portador do RG nº 1.234.567-8, para exercer o cargo em comissão de Diretor Geral, símbolo CC-1.',
+    'Portaria nº 22/2025 - Nomeia Maria Aparecida dos Santos para o cargo de Assessora de Comunicação da Câmara Municipal.',
+    'PORTARIA Nº 30/2025 RESOLVE: DESIGNAR a servidora ANA PAULA FERREIRA, ocupante do cargo efetivo de Oficial Administrativo, para exercer a função de Pregoeira.',
+    'PORTARIA Nº 40/2026 RESOLVE: EXONERAR, a partir de 01/02/2026, o Sr. JOÃO CARLOS DA SILVA do cargo em comissão de Diretor Geral.',
+    'Portaria 12/2019 Nomeia Carlos Antigo para o cargo de Contador.',
+  ];
+  const all = { appointments: [], dismissals: [] };
+  for (const d of docs) { const r = extractActs(d, { now }); all.appointments.push(...r.appointments); all.dismissals.push(...r.dismissals); }
+  const recs = actRecords(all, 'https://cm.x.gov.br/portarias', { fallbackEmail: 'camara@cm.x.gov.br' });
+  const names = recs.map(r => r.name).sort();
+  assert.deepEqual(names, ['Ana Paula Ferreira', 'Maria Aparecida dos Santos'], 'exonerado e ato antigo ficam de fora');
+  assert.equal(recs.find(r => r.name === 'Ana Paula Ferreira').role, 'Pregoeira · Portaria 30/2025');
+  assert.equal(recs.find(r => r.name === 'Ana Paula Ferreira').sector, 'compras');
+
+  const listing = `<h1>Portarias</h1><a href="?ano=2026">2026</a><a href="?ano=2018">2018</a>
+    <table><tr><td><a href="?id=10">0010-2026</a></td><td>Nomeia servidor para cargo em comissão</td></tr>
+    <tr><td><a href="?id=11">0011-2026</a></td><td>Autoriza diária de viagem</td></tr></table>`;
+  const links = actLinks(listing, 'https://cm.x.gov.br/portarias', () => true, { now });
+  assert.ok(links.listings.some(l => l.url.endsWith('?ano=2026')));
+  assert.ok(!links.listings.some(l => l.url.endsWith('?ano=2018')), 'anos antigos são ignorados');
+  assert.ok(links.docs.some(d => d.url.endsWith('?id=10')));
+  assert.ok(!links.docs.some(d => d.url.endsWith('?id=11')), 'diárias não são atos de pessoal');
+});
