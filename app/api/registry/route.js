@@ -22,19 +22,15 @@ export async function GET(request) {
 
   const results = new Array(pages.length);
   let cursor = 0;
-  const worker = async () => {
+  const worker = async (workerIdx) => {
+    if (workerIdx > 0) await new Promise(res => setTimeout(res, workerIdx * 120));
     while (cursor < pages.length) {
       const idx = cursor++;
       const p = pages[idx];
-      let r = await fetchRegistryPage(uf, p, { force }).catch(e => ({ page: p, status: 'erro', entries: [], reason: e.message }));
-      if (r.status !== 200) {
-        await new Promise(res => setTimeout(res, 350));
-        r = await fetchRegistryPage(uf, p, { force: true }).catch(e => ({ page: p, status: 'erro', entries: [], reason: e.message }));
-      }
-      results[idx] = r;
+      results[idx] = await fetchRegistryPage(uf, p, { force }).catch(e => ({ page: p, status: 'erro', entries: [], reason: e.message }));
     }
   };
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pages.length) }, () => worker()));
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pages.length) }, (_, i) => worker(i)));
 
   const lastPage = Math.max(0, ...results.map(r => r.lastPage || 0)) || null;
   const entries = results.flatMap(r => r.entries);
