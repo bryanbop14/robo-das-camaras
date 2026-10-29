@@ -41,7 +41,7 @@ export function ContactFilters({ value, onChange, total, shown }) {
 
 export const DEFAULT_FILTERS = { sector: 'todos', minConfidence: 0, officialOnly: false, query: '' };
 
-export default function ContactTable({ contacts, showCity = false, limit = 500 }) {
+export default function ContactTable({ contacts, showCity = false, limit = 500, addressByCity = null }) {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const shown = useMemo(() => filterContacts(contacts, filters), [contacts, filters]);
   return <div>
@@ -49,7 +49,7 @@ export default function ContactTable({ contacts, showCity = false, limit = 500 }
     <div className="tablewrap"><table>
       <thead><tr>{showCity && <th>Município</th>}<th>Nome</th><th>Cargo / setor</th><th>E-mail</th><th>Telefone</th><th>Confiança</th><th>Fonte</th></tr></thead>
       <tbody>{shown.slice(0, limit).map((c, i) => <tr key={(c.email || c.phone) + i}>
-        {showCity && <td>{c.city}</td>}
+        {showCity && <td>{c.city}{addressByCity?.[c.city] && <div className="muted small">{addressByCity[c.city]}</div>}</td>}
         <td>{c.name || <span className="muted">—</span>}</td>
         <td>{c.role || '—'}{c.sector && <div><span className={'tag tag-' + c.sector}>{SECTOR_LABEL[c.sector]}</span></div>}</td>
         <td>{c.email ? <a href={'mailto:' + c.email}>{c.email}</a> : '—'}{c.emailKind && <div className="muted small">{c.emailKind}</div>}</td>

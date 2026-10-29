@@ -23,6 +23,8 @@ function report(city, data) {
     robotsText: (data.robotsText || '').slice(0, 800), blockedUrls: (data.blockedUrls || []).slice(0, 4),
   };
 }
+/** Endereço do resultado; resultados antigos (salvos antes do campo existir) usam o endereço do cadastro. */
+const addrOf = r => r.address || (r.registry?.address ? { text: r.registry.address, cep: '', origin: 'cadastro Interlegis' } : null);
 const best = r => r.contacts.find(c => c.priority >= 4 && (c.name || c.email)) || r.contacts[0] || null;
 
 export default function StateSweep({ uf, cities, citiesLoading, registry }) {
@@ -133,14 +135,14 @@ export default function StateSweep({ uf, cities, citiesLoading, registry }) {
   }
   function exportContacts() {
     const rows = [CONTACT_HEADER];
-    for (const r of results) for (const c of r.contacts) rows.push(contactRow(uf, r.city, c, SECTOR_LABEL, r.address));
+    for (const r of results) for (const c of r.contacts) rows.push(contactRow(uf, r.city, c, SECTOR_LABEL, addrOf(r)));
     download(toCsv(rows), `contatos-camaras-${uf.toLowerCase()}.csv`);
   }
   function exportChambers() {
     const rows = [['UF', 'Município', 'Situação', 'CNPJ', 'Endereço', 'CEP', 'Origem do endereço', 'E-mail (cadastro)', 'Telefone (cadastro)', 'Site', 'SAPL', 'Plataforma', 'Contatos', 'Prioritários', 'Melhor contato', 'Cargo', 'E-mail do contato', 'Telefone do contato']];
     for (const r of [...results].sort((a, b) => a.city.localeCompare(b.city, 'pt-BR'))) {
       const b = best(r), reg = r.registry || {};
-      rows.push([uf, r.city, STATUS_LABEL[r.status] || r.status, reg.cnpj, r.address?.text || reg.address, r.address?.cep || '', r.address?.origin || (reg.address ? 'cadastro Interlegis' : ''), reg.email, reg.phone, r.officialSite, r.saplUrl, r.platform,
+      rows.push([uf, r.city, STATUS_LABEL[r.status] || r.status, reg.cnpj, addrOf(r)?.text || '', addrOf(r)?.cep || '', addrOf(r)?.origin || '', reg.email, reg.phone, r.officialSite, r.saplUrl, r.platform,
         r.contacts.length, r.contacts.filter(c => c.priority >= 4).length, b?.name, b?.role, b?.email, b?.phone]);
     }
     download(toCsv(rows), `camaras-${uf.toLowerCase()}.csv`);
@@ -200,18 +202,19 @@ export default function StateSweep({ uf, cities, citiesLoading, registry }) {
             <button key={k} className={(statusFilter === k ? 'chip on ' : 'chip ') + 'tone-' + STATUS_TONE[k]} onClick={() => setStatusFilter(k)}>{l} ({counts[k]})</button>)}
         </div>
         <div className="tablewrap"><table>
-          <thead><tr><th>Município</th><th>Situação</th><th>Contatos</th><th>Melhor contato</th><th>Site / SAPL</th></tr></thead>
+          <thead><tr><th>Município</th><th>Situação</th><th>Contatos</th><th>Melhor contato</th><th>Endereço</th><th>Site / SAPL</th></tr></thead>
           <tbody>{tableRows.map(r => { const b = best(r); return <Fragment key={r.id}>
             <tr className="clickable" onClick={() => setOpen(open === r.id ? null : r.id)}>
               <td><span className="caret">{open === r.id ? '▾' : '▸'}</span> {r.city}</td>
               <td><span className={'tone-' + (STATUS_TONE[r.status] || 'warn')}>{STATUS_LABEL[r.status] || r.status}</span></td>
               <td>{r.contacts.length}{r.contacts.some(c => c.priority >= 4) && <span className="muted small"> · {r.contacts.filter(c => c.priority >= 4).length} prior.</span>}</td>
               <td>{b ? <>{b.name || b.role}<div className="muted small">{b.email || b.phone}</div></> : '—'}</td>
+              <td className="small">{addrOf(r) ? formatAddress(addrOf(r)) : <span className="muted">—</span>}</td>
               <td onClick={e => e.stopPropagation()}>{r.officialSite ? <a href={r.officialSite} target="_blank" rel="noreferrer">site</a> : '—'}{r.saplUrl && <> · <a href={r.saplUrl} target="_blank" rel="noreferrer">SAPL</a></>}</td>
             </tr>
-            {open === r.id && <tr className="detail"><td colSpan={5}>
+            {open === r.id && <tr className="detail"><td colSpan={6}>
               {(r.warning || r.error) && <p className="warn">{r.error || r.warning}</p>}
-              {r.address && <p className="small">📍 {formatAddress(r.address)} <span className="muted">({r.address.origin})</span></p>}
+              {addrOf(r) && <p className="small">📍 {formatAddress(addrOf(r))} <span className="muted">({addrOf(r).origin})</span></p>}
               {r.platform && <p className="muted small">Plataforma: {r.platform} · {r.pagesVisited} páginas em {(r.elapsedMs / 1000).toFixed(1)} s</p>}
               <ContactTable contacts={r.contacts} />
               {RETRY_STATUSES.has(r.status) && <AssistedCapture urls={uniqUrls(r)} robotsText={r.robotsText}
@@ -219,7 +222,7 @@ export default function StateSweep({ uf, cities, citiesLoading, registry }) {
             </td></tr>}
           </Fragment>; })}</tbody>
         </table></div>
-      </> : <ContactTable contacts={allContacts} showCity limit={800} />}
+      </> : <ContactTable contacts={allContacts} showCity limit={800} addressByCity={Object.fromEntries(results.map(r => [r.city, addrOf(r) ? formatAddress(addrOf(r)) : '']))} />}
     </>}
     <p className="muted small"><strong>Importante:</strong> “concluído” indica que a coleta do município terminou dentro dos limites, não que todos os servidores foram identificados. Bloqueios, PDFs e páginas que exigem JavaScript ficam marcados para revisão manual.</p>
   </div>;
